@@ -374,6 +374,185 @@ def compute_z_scores(observed_props, expected_probs, n):
         z_scores[d] = max(z, 0)
     return z_scores
 
+def to_excel_bytes(df_dict):
+    """Convert a dict of {sheet_name: DataFrame} to Excel bytes for download."""
+    from io import BytesIO
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        for sheet_name, df in df_dict.items():
+            df.to_excel(writer, sheet_name=sheet_name, index=False)
+    return output.getvalue()
+
+
+def generate_gst_case_data():
+    """Generate rich GST Invoice Fraud case study dataset."""
+    np.random.seed(101)
+    n_total = 10000
+    n_legit = 8000
+    n_fraud = 2000
+
+    # Legitimate invoices — lognormal
+    legit_amounts = np.random.lognormal(mean=10, sigma=1.2, size=n_legit).round(2)
+    legit_gstin = [f"29AA{''.join(np.random.choice(list('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'), 5))}{''.join(np.random.choice(list('0123456789'), 4))}Z{''.join(np.random.choice(list('0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'), 1))}" for _ in range(n_legit)]
+    legit_labels = ["Legitimate"] * n_legit
+
+    # Fraudulent invoices — round numbers, threshold gaming
+    fraud_base = np.random.choice(
+        [25000, 50000, 100000, 75000, 150000, 200000, 49999, 99999], size=n_fraud,
+        p=[0.15, 0.20, 0.15, 0.10, 0.10, 0.10, 0.10, 0.10],
+    ).astype(float)
+    fraud_amounts = np.abs(fraud_base + np.random.uniform(-500, 500, size=n_fraud)).round(2)
+    # Shell company GSTINs — fewer unique values (reuse)
+    shell_gstins = [f"27BB{''.join(np.random.choice(list('ABCDEF'), 5))}{''.join(np.random.choice(list('12345'), 4))}Z1" for _ in range(20)]
+    fraud_gstin = np.random.choice(shell_gstins, size=n_fraud).tolist()
+    fraud_labels = ["Suspicious"] * n_fraud
+
+    # Combine
+    amounts = np.concatenate([legit_amounts, fraud_amounts])
+    gstins = legit_gstin + fraud_gstin
+    labels = legit_labels + fraud_labels
+
+    dates_legit = pd.date_range("2023-04-01", periods=n_legit, freq="h").strftime("%Y-%m-%d").tolist()
+    dates_fraud = np.random.choice(pd.date_range("2023-04-01", "2024-03-31").strftime("%Y-%m-%d").tolist(), size=n_fraud).tolist()
+    dates = dates_legit + dates_fraud
+
+    categories = np.random.choice(
+        ["Raw Materials", "Services", "Equipment", "Consumables", "IT & Software", "Maintenance"],
+        size=n_total, p=[0.30, 0.25, 0.15, 0.12, 0.10, 0.08],
+    ).tolist()
+
+    idx = list(range(n_total))
+    np.random.shuffle(idx)
+
+    df = pd.DataFrame({
+        "Invoice_ID": [f"INV-{i+1:06d}" for i in range(n_total)],
+        "Invoice_Date": [dates[i] for i in idx],
+        "Supplier_GSTIN": [gstins[i] for i in idx],
+        "Invoice_Amount_INR": [amounts[i] for i in idx],
+        "GST_Rate_Pct": np.random.choice([5, 12, 18, 28], size=n_total, p=[0.15, 0.25, 0.40, 0.20]),
+        "Category": [categories[i] for i in idx],
+        "ITC_Claimed_INR": [round(amounts[i] * np.random.choice([0.05, 0.12, 0.18, 0.28]), 2) for i in idx],
+        "Label": [labels[i] for i in idx],
+    })
+    df["First_Digit"] = df["Invoice_Amount_INR"].apply(get_first_digit)
+    return df
+
+
+def generate_expense_case_data():
+    """Generate rich Expense Reimbursement case study dataset."""
+    np.random.seed(202)
+    n_total = 24800
+
+    # Employee pool
+    departments = ["Sales", "Marketing", "IT", "HR", "Finance", "Operations", "Legal", "Admin"]
+    employee_ids = [f"EMP-{i+1:04d}" for i in range(320)]
+    employee_depts = {eid: np.random.choice(departments) for eid in employee_ids}
+
+    # Normal claims — lognormal
+    n_normal = 20000
+    normal_amounts = np.random.lognormal(mean=8.5, sigma=0.9, size=n_normal).round(2)
+    normal_emps = np.random.choice(employee_ids, size=n_normal).tolist()
+
+    # Fraudulent — round numbers, threshold gaming around ₹50,000 approval limit
+    n_fraud = 4800
+    fraud_patterns = np.random.choice(
+        [5000, 10000, 15000, 20000, 25000, 49000, 49500, 49900, 49999, 50000],
+        size=n_fraud,
+        p=[0.08, 0.10, 0.08, 0.12, 0.12, 0.10, 0.10, 0.10, 0.12, 0.08],
+    ).astype(float)
+    fraud_amounts = np.abs(fraud_patterns + np.random.uniform(-200, 200, size=n_fraud)).round(2)
+    # Fraudsters are a small subset of employees
+    fraud_emps_pool = np.random.choice(employee_ids[:20], size=7, replace=False).tolist()
+    fraud_emps = np.random.choice(fraud_emps_pool, size=n_fraud).tolist()
+
+    amounts = np.concatenate([normal_amounts, fraud_amounts])
+    emps = normal_emps + fraud_emps
+    labels = ["Normal"] * n_normal + ["Suspicious"] * n_fraud
+
+    expense_types = np.random.choice(
+        ["Travel", "Hotel", "Meals", "Transport", "Office Supplies", "Client Entertainment", "Miscellaneous"],
+        size=n_total, p=[0.25, 0.15, 0.18, 0.12, 0.10, 0.12, 0.08],
+    ).tolist()
+
+    dates = pd.date_range("2022-04-01", periods=n_total, freq="22min").strftime("%Y-%m-%d").tolist()
+
+    idx = list(range(n_total))
+    np.random.shuffle(idx)
+
+    df = pd.DataFrame({
+        "Claim_ID": [f"CLM-{i+1:06d}" for i in range(n_total)],
+        "Claim_Date": [dates[i] for i in idx],
+        "Employee_ID": [emps[i] for i in idx],
+        "Department": [employee_depts[emps[i]] for i in idx],
+        "Expense_Type": [expense_types[i] for i in idx],
+        "Amount_INR": [amounts[i] for i in idx],
+        "Approval_Status": np.random.choice(["Approved", "Pending", "Rejected"], size=n_total, p=[0.75, 0.15, 0.10]),
+        "Label": [labels[i] for i in idx],
+    })
+    df["First_Digit"] = df["Amount_INR"].apply(get_first_digit)
+    df["Last_Digit"] = (df["Amount_INR"] % 10).astype(int)
+    df["Is_Round"] = df["Amount_INR"].apply(lambda x: x % 1000 == 0 or x % 500 == 0)
+    return df
+
+
+def generate_loan_case_data():
+    """Generate rich Bank Structuring case study dataset."""
+    np.random.seed(303)
+    n_total = 6200
+
+    branches = [f"Branch-{chr(65+i)}" for i in range(12)]
+    branch_cities = {
+        "Branch-A": "Mumbai", "Branch-B": "Delhi", "Branch-C": "Bangalore",
+        "Branch-D": "Chennai", "Branch-E": "Hyderabad", "Branch-F": "Pune",
+        "Branch-G": "Kolkata", "Branch-H": "Ahmedabad", "Branch-I": "Jaipur",
+        "Branch-J": "Lucknow", "Branch-K": "Kochi", "Branch-L": "Chandigarh",
+    }
+
+    # Normal loans — lognormal around ₹5–15 lakh
+    n_normal = 5200
+    normal_amounts = np.random.lognormal(mean=13.2, sigma=0.7, size=n_normal).round(0)
+    normal_branches = np.random.choice(branches, size=n_normal).tolist()
+    normal_labels = ["Normal"] * n_normal
+
+    # Structuring — amounts clustered at ₹9.0L–₹9.99L to avoid ₹10L threshold
+    n_struct = 1000
+    struct_amounts = np.random.uniform(900000, 999900, size=n_struct).round(0)
+    # Concentration in 3 branches
+    struct_branches = np.random.choice(branches[:3], size=n_struct, p=[0.40, 0.35, 0.25]).tolist()
+    struct_labels = ["Suspicious_Structuring"] * n_struct
+
+    amounts = np.concatenate([normal_amounts, struct_amounts])
+    branch_list = normal_branches + struct_branches
+    labels = normal_labels + struct_labels
+
+    loan_types = np.random.choice(
+        ["Personal Loan", "Home Loan", "Vehicle Loan", "Business Loan", "Education Loan", "Gold Loan"],
+        size=n_total, p=[0.25, 0.20, 0.15, 0.20, 0.10, 0.10],
+    ).tolist()
+
+    dates = pd.date_range("2022-04-01", periods=n_total, freq="50min").strftime("%Y-%m-%d").tolist()
+    customer_ids = [f"CUST-{np.random.randint(10000, 99999)}" for _ in range(n_total)]
+
+    idx = list(range(n_total))
+    np.random.shuffle(idx)
+
+    df = pd.DataFrame({
+        "Loan_ID": [f"LN-{i+1:05d}" for i in range(n_total)],
+        "Disbursement_Date": [dates[i] for i in idx],
+        "Customer_ID": [customer_ids[i] for i in idx],
+        "Branch": [branch_list[i] for i in idx],
+        "City": [branch_cities[branch_list[i]] for i in idx],
+        "Loan_Type": [loan_types[i] for i in idx],
+        "Loan_Amount_INR": [amounts[i] for i in idx],
+        "Interest_Rate_Pct": np.round(np.random.uniform(7.5, 14.5, size=n_total), 2),
+        "Tenure_Months": np.random.choice([12, 24, 36, 48, 60, 84, 120, 180, 240], size=n_total),
+        "Label": [labels[i] for i in idx],
+    })
+    df["First_Digit"] = df["Loan_Amount_INR"].apply(get_first_digit)
+    df["Near_10L_Threshold"] = df["Loan_Amount_INR"].apply(lambda x: 900000 <= x < 1000000)
+    return df
+
+
 def run_benford_analysis(data, test_type="first"):
     """Run complete Benford analysis on a numeric series."""
     data = data.dropna()
@@ -965,20 +1144,46 @@ elif page == "💼 Case Study 1: GST Invoice Fraud":
     </div>
     """, unsafe_allow_html=True)
 
-    # Simulated GST data
-    np.random.seed(101)
-    legit_invoices = np.random.lognormal(mean=10, sigma=1.2, size=8000).round(2)
-    # Fraudulent: round numbers and specific clustering
-    fraud_invoices = np.random.choice(
-        [25000, 50000, 100000, 75000, 150000, 200000, 49999, 99999], size=2000,
-        p=[0.15, 0.20, 0.15, 0.10, 0.10, 0.10, 0.10, 0.10],
-    ).astype(float)
-    fraud_invoices += np.random.uniform(-500, 500, size=2000)
-    all_invoices = np.concatenate([legit_invoices, fraud_invoices])
-    np.random.shuffle(all_invoices)
-    all_invoices = np.abs(all_invoices)
+    # Generate rich GST dataset
+    gst_full_df = generate_gst_case_data()
+    # --- Download Section ---
+    st.markdown("### 📥 Download Case Study Data")
+    st.markdown("Download the full dataset used in this case study to explore in Excel or run your own analysis.")
 
-    gst_df = pd.DataFrame({"Invoice_Amount": all_invoices})
+    # Build Benford analysis summary sheet
+    gst_benford_summary = []
+    for d in range(1, 10):
+        count = int(gst_full_df["First_Digit"].value_counts().get(d, 0))
+        expected = benford_prob(d)
+        obs_pct = count / len(gst_full_df)
+        gst_benford_summary.append({
+            "Digit": d, "Observed_Count": count,
+            "Expected_Count": round(expected * len(gst_full_df)),
+            "Observed_Pct": round(obs_pct * 100, 2),
+            "Benford_Pct": round(expected * 100, 2),
+            "Difference_Pct": round((obs_pct - expected) * 100, 2),
+        })
+    gst_summary_df = pd.DataFrame(gst_benford_summary)
+
+    gst_excel = to_excel_bytes({
+        "Invoice_Data": gst_full_df,
+        "Benford_Analysis": gst_summary_df,
+    })
+
+    dl1, dl2 = st.columns([1, 3])
+    with dl1:
+        st.download_button(
+            label="⬇️ Download GST Data (.xlsx)",
+            data=gst_excel,
+            file_name="MPA_CaseStudy1_GST_Invoice_Fraud.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    with dl2:
+        st.caption(f"**{len(gst_full_df):,} invoices** | Columns: Invoice ID, Date, Supplier GSTIN, Amount, GST Rate, Category, ITC Claimed, Label, First Digit")
+
+    with st.expander("👁️ Preview Dataset (first 20 rows)"):
+        st.dataframe(gst_full_df.head(20), use_container_width=True, hide_index=True)
 
     st.markdown("### How a GST Fraudster Fails the Benford Test")
     st.markdown("""
@@ -992,7 +1197,7 @@ elif page == "💼 Case Study 1: GST Invoice Fraud":
     </div>
     """, unsafe_allow_html=True)
 
-    results = run_benford_analysis(gst_df["Invoice_Amount"], "first")
+    results = run_benford_analysis(gst_full_df["Invoice_Amount_INR"], "first")
     fig = plot_benford_comparison(results, "First-Digit Analysis — GST Invoice Amounts (10,000 Invoices)")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -1009,10 +1214,10 @@ elif page == "💼 Case Study 1: GST Invoice Fraud":
     (10 through 99) should contribute approximately **1/90 = 1.11%** of total value.
     """)
 
-    two_digits = gst_df["Invoice_Amount"].apply(get_first_two_digits).dropna().astype(int)
-    gst_df_temp = gst_df.copy()
+    two_digits = gst_full_df["Invoice_Amount_INR"].apply(get_first_two_digits).dropna().astype(int)
+    gst_df_temp = gst_full_df.copy()
     gst_df_temp["TwoDigit"] = two_digits
-    summation = gst_df_temp.groupby("TwoDigit")["Invoice_Amount"].sum()
+    summation = gst_df_temp.groupby("TwoDigit")["Invoice_Amount_INR"].sum()
     total_value = summation.sum()
     summation_pct = (summation / total_value * 100).sort_values(ascending=False).head(10)
 
@@ -1061,7 +1266,10 @@ elif page == "💳 Case Study 2: Expense Report Fraud":
     </div>
     """, unsafe_allow_html=True)
 
-    # Use case study data from the Excel
+    # Generate rich expense dataset
+    expense_full_df = generate_expense_case_data()
+
+    # Use case study data from the Excel (observed digit counts)
     expense_observed = {1: 4521, 2: 5704, 3: 3224, 4: 3348, 5: 3050, 6: 1736, 7: 1364, 8: 1116, 9: 737}
     total_n = sum(expense_observed.values())
 
@@ -1075,6 +1283,43 @@ elif page == "💳 Case Study 2: Expense Report Fraud":
         </p>
     </div>
     """, unsafe_allow_html=True)
+
+    # --- Download Section ---
+    st.markdown("### 📥 Download Case Study Data")
+    st.markdown("Download the full dataset used in this case study to explore in Excel or run your own analysis.")
+
+    exp_benford_summary = []
+    for d in range(1, 10):
+        expected = benford_prob(d)
+        obs_pct = expense_observed[d] / total_n
+        exp_benford_summary.append({
+            "Digit": d, "Observed_Count": expense_observed[d],
+            "Expected_Count": round(expected * total_n),
+            "Observed_Pct": round(obs_pct * 100, 2),
+            "Benford_Pct": round(expected * 100, 2),
+            "Difference_Pct": round((obs_pct - expected) * 100, 2),
+        })
+    exp_summary_df = pd.DataFrame(exp_benford_summary)
+
+    exp_excel = to_excel_bytes({
+        "Expense_Claims": expense_full_df,
+        "Benford_Analysis": exp_summary_df,
+    })
+
+    dl1, dl2 = st.columns([1, 3])
+    with dl1:
+        st.download_button(
+            label="⬇️ Download Expense Data (.xlsx)",
+            data=exp_excel,
+            file_name="MPA_CaseStudy2_Expense_Report_Fraud.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    with dl2:
+        st.caption(f"**{len(expense_full_df):,} claims** | Columns: Claim ID, Date, Employee ID, Department, Expense Type, Amount, Approval Status, Label, First Digit, Last Digit, Is Round")
+
+    with st.expander("👁️ Preview Dataset (first 20 rows)"):
+        st.dataframe(expense_full_df.head(20), use_container_width=True, hide_index=True)
 
     # Build results from the real data
     exp_props = {d: expense_observed[d] / total_n for d in range(1, 10)}
@@ -1181,13 +1426,64 @@ elif page == "🏛️ Case Study 3: Bank Structuring":
     </div>
     """, unsafe_allow_html=True)
 
-    # Loan disbursement data from the Excel
+    # Generate rich loan dataset
+    loan_full_df = generate_loan_case_data()
+
+    # Loan disbursement data from the Excel (observed digit counts)
     loan_observed = {1: 1526, 2: 1091, 3: 769, 4: 614, 5: 521, 6: 428, 7: 354, 8: 329, 9: 568}
     loan_n = sum(loan_observed.values())
     loan_props = {d: loan_observed[d] / loan_n for d in range(1, 10)}
     loan_chi2 = compute_chi_squared(loan_observed, BENFORD_FIRST, loan_n)
     loan_mad = compute_mad(loan_props, BENFORD_FIRST)
     loan_z = compute_z_scores(loan_props, BENFORD_FIRST, loan_n)
+
+    # --- Download Section ---
+    st.markdown("### 📥 Download Case Study Data")
+    st.markdown("Download the full dataset used in this case study to explore in Excel or run your own analysis.")
+
+    loan_benford_summary = []
+    for d in range(1, 10):
+        expected = benford_prob(d)
+        obs_pct = loan_observed[d] / loan_n
+        loan_benford_summary.append({
+            "Digit": d, "Observed_Count": loan_observed[d],
+            "Expected_Count": round(expected * loan_n),
+            "Observed_Pct": round(obs_pct * 100, 2),
+            "Benford_Pct": round(expected * 100, 2),
+            "Difference_Pct": round((obs_pct - expected) * 100, 2),
+        })
+    loan_summary_df = pd.DataFrame(loan_benford_summary)
+
+    # Branch-level analysis sheet
+    branch_analysis = loan_full_df.groupby("Branch").agg(
+        Total_Loans=("Loan_ID", "count"),
+        Avg_Amount=("Loan_Amount_INR", "mean"),
+        Suspicious_Count=("Label", lambda x: (x == "Suspicious_Structuring").sum()),
+        Near_10L_Count=("Near_10L_Threshold", "sum"),
+    ).reset_index()
+    branch_analysis["Suspicious_Pct"] = (branch_analysis["Suspicious_Count"] / branch_analysis["Total_Loans"] * 100).round(1)
+    branch_analysis["Avg_Amount"] = branch_analysis["Avg_Amount"].round(0)
+
+    loan_excel = to_excel_bytes({
+        "Loan_Data": loan_full_df,
+        "Benford_Analysis": loan_summary_df,
+        "Branch_Analysis": branch_analysis,
+    })
+
+    dl1, dl2 = st.columns([1, 3])
+    with dl1:
+        st.download_button(
+            label="⬇️ Download Loan Data (.xlsx)",
+            data=loan_excel,
+            file_name="MPA_CaseStudy3_Bank_Structuring.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            type="primary",
+        )
+    with dl2:
+        st.caption(f"**{len(loan_full_df):,} loans** | 3 sheets: Loan Data, Benford Analysis, Branch Analysis | Columns include: Loan ID, Date, Customer, Branch, City, Loan Type, Amount, Interest Rate, Tenure, Label")
+
+    with st.expander("👁️ Preview Dataset (first 20 rows)"):
+        st.dataframe(loan_full_df.head(20), use_container_width=True, hide_index=True)
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Loan Records", f"{loan_n:,}")
