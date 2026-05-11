@@ -1,3 +1,4 @@
+
 """
 Benford's Law Fraud Analytics Platform
 The Mountain Path Academy — Prof. V. Ravichandran
@@ -50,20 +51,66 @@ st.markdown("""
         background: linear-gradient(180deg, #f0f2f8 0%, var(--mpa-bg) 100%);
     }
 
-    /* Sidebar */
+    /* Sidebar — full override for dark background */
     section[data-testid="stSidebar"] {
-        background: linear-gradient(180deg, var(--mpa-navy) 0%, var(--mpa-dark) 100%);
+        background: linear-gradient(180deg, var(--mpa-navy) 0%, var(--mpa-dark) 100%) !important;
     }
-    section[data-testid="stSidebar"] .stMarkdown p,
-    section[data-testid="stSidebar"] .stMarkdown li,
-    section[data-testid="stSidebar"] .stMarkdown h1,
-    section[data-testid="stSidebar"] .stMarkdown h2,
-    section[data-testid="stSidebar"] .stMarkdown h3,
-    section[data-testid="stSidebar"] label {
+    section[data-testid="stSidebar"] > div {
+        background: transparent !important;
+    }
+    /* All text inside sidebar: white/light for readability */
+    section[data-testid="stSidebar"] * {
         color: #e0e4ef !important;
     }
-    section[data-testid="stSidebar"] .stRadio label span {
+    /* Radio button labels — brighter for active selection */
+    section[data-testid="stSidebar"] .stRadio label {
         color: #c9cee0 !important;
+        background: transparent !important;
+        border-radius: 8px;
+        padding: 0.3rem 0.5rem;
+        margin: 0.1rem 0;
+        transition: all 0.2s ease;
+    }
+    section[data-testid="stSidebar"] .stRadio label:hover {
+        background: rgba(212, 168, 67, 0.15) !important;
+        color: #ffffff !important;
+    }
+    section[data-testid="stSidebar"] .stRadio label span {
+        color: #dce1f0 !important;
+        font-family: 'Inter', sans-serif !important;
+        font-size: 0.92rem !important;
+    }
+    /* Selected radio — gold highlight */
+    section[data-testid="stSidebar"] .stRadio [data-checked="true"] span,
+    section[data-testid="stSidebar"] .stRadio input:checked + div span {
+        color: #ffffff !important;
+        font-weight: 600 !important;
+    }
+    section[data-testid="stSidebar"] .stRadio [data-checked="true"],
+    section[data-testid="stSidebar"] .stRadio input:checked + div {
+        background: rgba(212, 168, 67, 0.2) !important;
+    }
+    /* Radio circles/dots */
+    section[data-testid="stSidebar"] .stRadio svg {
+        fill: var(--mpa-gold) !important;
+        color: var(--mpa-gold) !important;
+    }
+    /* NAVIGATE header */
+    section[data-testid="stSidebar"] .stRadio > label,
+    section[data-testid="stSidebar"] .stRadio > div > label:first-child {
+        color: var(--mpa-gold-light) !important;
+        font-weight: 700 !important;
+        font-size: 0.8rem !important;
+        letter-spacing: 1.5px !important;
+        text-transform: uppercase !important;
+    }
+    /* Sidebar horizontal rules */
+    section[data-testid="stSidebar"] hr {
+        border-color: #2a3158 !important;
+    }
+    /* Sidebar markdown bold text */
+    section[data-testid="stSidebar"] strong {
+        color: var(--mpa-gold-light) !important;
     }
 
     /* Headers */
